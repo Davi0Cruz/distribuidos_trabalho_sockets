@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+// Mensagem usada para troca de informações de descoberta
+message DeviceDiscovery {
+    string device_type = 1;
+    string ip = 2;
+    int32 port = 3;
+    string status = 4;
+}
+
+// Mensagem para comandos do cliente para o gateway
+message ClientRequest {
+    string command = 1;        // LIST_DEVICES, CONTROL_DEVICE, GET_STATUS
+    string device_id = 2;      // Identificador do dispositivo (tipo + IP + porta)
+    string action = 3;         // ON, OFF, SET_TEMP, etc.
+    string parameters = 4;     // Parâmetros adicionais em formato JSON
+}
+
+// Mensagem de resposta do gateway para o cliente
+message ClientResponse {
+    bool success = 1;
+    string message = 2;
+    repeated DeviceInfo devices = 3;  // Lista de dispositivos quando necessário
+}
+
+// Informações detalhadas de um dispositivo
+message DeviceInfo {
+    string device_id = 1;      // Identificador único (tipo + IP + porta)
+    string device_type = 2;    // Tipo do dispositivo
+    string ip = 3;            // IP do dispositivo
+    int32 port = 4;           // Porta do dispositivo
+    string status = 5;        // Status atual
+    map<string, string> attributes = 6;  // Atributos específicos do dispositivo
+}
+
+// Mensagem do gateway para um dispositivo
+message DeviceCommand {
+    string command = 1;       // ON, OFF, SET_TEMP, etc.
+    string parameters = 2;    // Parâmetros em formato JSON
+}
+
+// Mensagem de resposta do dispositivo
+message DeviceResponse {
+    bool success = 1;
+    string message = 2;
+    string status = 3;
+    map<string, string> attributes = 4;
+}
+
+// Mensagem para dados de sensores ou estados
+message SensorData {
+    string device_id = 1;
+    string sensor_type = 2;    // "temperature", "ac_state", "lamp_state", etc.
+    double value = 3;          // quando for algo numérico
+    string unit = 4;           // "Celsius", "%", etc.
+    int64 timestamp = 5;
+}
+
+// (OPCIONAL) Mensagem para envio periódico de estado
+message DeviceState {
+    string device_id = 1;
+    string device_type = 2;
+    string state_json = 3;
+    int64 timestamp = 4;
+}
