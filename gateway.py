@@ -34,9 +34,13 @@ class Gateway:
         self.sensor_socket.bind(('0.0.0.0', 50002))
 
     def send_discovery_message(self):
+        self.devices.clear() # MUDEI AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-        sock.sendto("GATEWAY_DISCOVERY".encode('utf-8'), (self.MCAST_GRP, self.MCAST_PORT))
+        discovery_msg = device_pb2.DeviceCommand()
+        discovery_msg.command = "GATEWAY_DISCOVERY"
+        data = discovery_msg.SerializeToString()
+        sock.sendto(data, (self.MCAST_GRP, self.MCAST_PORT))
         sock.close()
 
     def listen_for_device_announcements(self):
@@ -178,7 +182,7 @@ class Gateway:
                         response.success = success
                         response.message = message
 
-                elif request.command == "GET_STATUS":
+                elif request.command == "SET_STATUS":
                     if not request.device_id:
                         response.success = False
                         response.message = "Missing device_id"
@@ -214,7 +218,7 @@ class Gateway:
         # Periodic discovery
         def periodic_discovery():
             while True:
-                time.sleep(30)
+                time.sleep(15)
                 self.send_discovery_message()
 
         discovery_timer = threading.Thread(target=periodic_discovery, daemon=True)

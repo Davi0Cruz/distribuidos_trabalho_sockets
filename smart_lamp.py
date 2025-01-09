@@ -7,7 +7,6 @@ import json
 from datetime import datetime
 import device_pb2
 
-
 class SmartLamp:
     def __init__(self):
         # Configurações de rede
@@ -19,11 +18,23 @@ class SmartLamp:
         # Guardar IP do gateway quando receber GATEWAY_DISCOVERY
         self.gateway_ip = None
 
+        # Potência padrão
+        self.power = 10
+
+        # Luminosidade padrão
+        self.brightness = 50
+
         # Estado do dispositivo
         self.state = {
             "power": "OFF",
-            "brightness": 50  # 0-100
+            "brightness": 0  # 0-100
         }
+
+        # Atualizando files do sensor de luminosidade
+        with open("files/brightness.txt", "w") as f:
+            f.write("0")
+        with open("files/lamp_power.txt", "w") as f:
+            f.write("0")
 
         # Inicializar sockets
         self.init_tcp_server()
@@ -68,11 +79,21 @@ class SmartLamp:
 
             if command == "ON":
                 self.state["power"] = "ON"
+                self.state["brightness"] = 50  # 0-100
+                with open("files/brightness.txt", "w") as f:
+                    f.write(str(self.brightness))
+                with open("files/lamp_power.txt", "w") as f:
+                    f.write(str(self.power))
                 response.success = True
                 response.message = "Lamp turned on"
 
             elif command == "OFF":
                 self.state["power"] = "OFF"
+                self.state["brightness"] = 0  # 0-100
+                with open("files/brightness.txt", "w") as f:
+                    f.write("0")
+                with open("files/lamp_power.txt", "w") as f:
+                    f.write("0")
                 response.success = True
                 response.message = "Lamp turned off"
 
@@ -80,7 +101,15 @@ class SmartLamp:
                 if "brightness" in params:
                     brightness = int(params["brightness"])
                     if 0 <= brightness <= 100:
+                        if brightness > 0:
+                            self.state["power"] = "ON"
+                        else:
+                            self.state["power"] = "OFF"
                         self.state["brightness"] = brightness
+                        with open("files/brightness.txt", "w") as f:
+                            f.write(str(brightness))
+                        with open("files/lamp_power.txt", "w") as f:
+                            f.write(str(self.power))
                         response.success = True
                         response.message = f"Brightness set to {brightness}%"
                     else:
@@ -149,7 +178,9 @@ class SmartLamp:
         """Escuta por mensagens de descoberta (multicast)"""
         while True:
             data, addr = self.mcast_socket.recvfrom(1024)
-            if data.decode('utf-8') == "GATEWAY_DISCOVERY":
+            msg = device_pb2.DeviceCommand()
+            msg.ParseFromString(data)
+            if msg.command == "GATEWAY_DISCOVERY":
                 # Salva IP do Gateway para envio periódico
                 self.gateway_ip = addr[0]
 

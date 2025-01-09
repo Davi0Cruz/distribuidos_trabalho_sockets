@@ -314,13 +314,23 @@ class DeviceStatusPanel(tb.Frame):
 
             elif dev_type == "temperature_sensor":
                 sensor_temp = state.get("temperature", "?")
-                unit = state.get("unit", "Celsius")
+                unit = state.get("unit", "°C")
                 info_str = f"Temperature Sensor [{dev_id}]\n  Temperature: {round(sensor_temp, 2)} {unit}"
 
             elif dev_type == "smart_lamp":
                 power = state.get("power", "OFF")
                 brightness = state.get("brightness", "?")
                 info_str = f"Smart Lamp [{dev_id}]\n  Power: {power}\n  Brightness: {brightness}"
+
+            elif dev_type == "brightness_sensor":
+                sensor_temp = state.get("brightness", "?")
+                unit = state.get("unit", "%")
+                info_str = f"Brightness Sensor [{dev_id}]\n  Brightness: {round(sensor_temp, 2)} {unit}"
+
+            elif dev_type == "power_sensor":
+                sensor_temp = state.get("power", "?")
+                unit = state.get("unit", "W")
+                info_str = f"Power Sensor [{dev_id}]\n  Power: {round(sensor_temp, 2)} {unit}"
 
             else:
                 # genérico
@@ -594,6 +604,10 @@ class SmartHomeGUI(tb.Window):
         if self.client.is_connected():
             self.client.disconnect()
             self.conn_indicator.config(foreground="red")
+            limpar_status = {}
+            self.status_panel.update_status(limpar_status)
+            for item in self.device_tree.get_children():
+                self.device_tree.delete(item)
             self.conn_status_label.config(text="[Desconectado]", foreground="red")
             self.write_log("Desconectado do Gateway.", "[INFO]")
         else:

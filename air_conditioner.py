@@ -20,13 +20,25 @@ class AirConditioner:
         # Guardar IP do gateway quando receber GATEWAY_DISCOVERY
         self.gateway_ip = None
 
+        # Temperatura padrão
+        self.const_temp = 25
+
+        # Potência padrão
+        self.power = 1000
+
         # Estado do dispositivo
         self.state = {
             "power": "OFF",
-            "temperature": 23,   # temperatura alvo
+            "temperature": self.const_temp,   # temperatura alvo
             "mode": "COOL",     # COOL, HEAT, FAN
             "fan_speed": "AUTO" # LOW, MEDIUM, HIGH, AUTO
         }
+
+        # Atualizando files do sensor de temperatura
+        with open("files/temperature.txt", "w") as f:
+            f.write(str(self.const_temp))
+        with open("files/ac_power.txt", "w") as f:
+            f.write("0")
 
         # Sockets
         self.init_tcp_server()
@@ -71,11 +83,21 @@ class AirConditioner:
 
             if command == "ON":
                 self.state["power"] = "ON"
+                self.state["temperature"] = self.const_temp
+                with open("files/temperature.txt", "w") as f:
+                    f.write(str(self.const_temp))
+                with open("files/ac_power.txt", "w") as f:
+                    f.write(str(self.power))
                 response.success = True
                 response.message = "Air conditioner turned on"
 
             elif command == "OFF":
                 self.state["power"] = "OFF"
+                self.state["temperature"] = self.const_temp
+                with open("files/temperature.txt", "w") as f:
+                    f.write(str(self.const_temp))
+                with open("files/ac_power.txt", "w") as f:
+                    f.write("0")
                 response.success = True
                 response.message = "Air conditioner turned off"
 
@@ -83,7 +105,12 @@ class AirConditioner:
                 if "temperature" in params:
                     temp = int(params["temperature"])
                     if 16 <= temp <= 30:
+                        self.state["power"] = "ON"
                         self.state["temperature"] = temp
+                        with open("files/temperature.txt", "w") as f:
+                            f.write(str(temp))
+                        with open("files/ac_power.txt", "w") as f:
+                            f.write(str(self.power))
                         response.success = True
                         response.message = f"Temperature set to {temp}°C"
                     else:
@@ -181,8 +208,9 @@ class AirConditioner:
         """Escuta por mensagens de descoberta (multicast)"""
         while True:
             data, addr = self.mcast_socket.recvfrom(1024)
-            mensagem = data.decode('utf-8')
-            if mensagem == "GATEWAY_DISCOVERY":
+            msg = device_pb2.DeviceCommand()
+            msg.ParseFromString(data)
+            if msg.command == "GATEWAY_DISCOVERY":
                 # Salva IP do Gateway para envio periódico
                 self.gateway_ip = addr[0]
 
@@ -208,7 +236,7 @@ class AirConditioner:
                     sensor_data.device_id = f"{self.device_type}_{self.get_local_ip()}_{self.TCP_PORT}"
                     sensor_data.sensor_type = "ac_state"
                     # Podemos colocar alguma informação numérica em 'value', por exemplo a temperatura
-                    sensor_data.value = float(self.state.get("temperature", 23))
+                    sensor_data.value = float(self.state.get("temperature", self.const_temp))
                     sensor_data.unit = json.dumps(self.state)  # 'label' indicando que o state em si está em attributes
                     sensor_data.timestamp = int(time.time())
 

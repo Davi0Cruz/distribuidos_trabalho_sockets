@@ -7,6 +7,7 @@ import json
 import random
 from datetime import datetime
 import device_pb2
+import subprocess
 
 
 class TemperatureSensor:
@@ -19,10 +20,13 @@ class TemperatureSensor:
         
         # Estado do dispositivo
         self.state = {
-            "temperature": 25.0,
-            "unit": "Celsius",
-            "update_interval": 15  # segundos
+            "temperature": 25,
+            "unit": "°C",
+            "update_interval": 1  # segundos
         }
+
+        # Temperatura padrão
+        self.const_temp = 25
         
         # Inicializar sockets
         self.init_tcp_server()
@@ -61,13 +65,29 @@ class TemperatureSensor:
         return ip
         
     def simulate_temperature(self):
-        """Simula mudanças de temperatura e envia dados periodicamente ao Gateway"""
+        """Lida com as mudanças de temperatura e envia dados periodicamente ao Gateway"""
         while True:
             # Simula variação de temperatura entre 20 e 30 graus
-            variation = random.uniform(-0.5, 0.5)
-            new_temp = self.state["temperature"] + variation
-            self.state["temperature"] = max(20.0, min(30.0, new_temp))
-            
+            # variation = random.uniform(-0.5, 0.5)
+            # new_temp = self.state["temperature"] + variation
+            # self.state["temperature"] = max(20.0, min(30.0, new_temp))
+
+            # Testando se o ar condicionado está conectado
+            pid_ac = subprocess.check_output("ps -aux | grep air_conditioner.py", shell=True, text=True)
+            if len(pid_ac.split("\n")) > 3:
+                # Conexão com temperatura do ar condicionado
+                with open("files/temperature.txt", "r") as f:
+                    conteudo = f.read().split()
+                    temp = int(conteudo[0])
+                    self.state["temperature"] = temp
+            else:
+                with open("files/temperature.txt", "w") as f:
+                    f.write(str(self.const_temp))
+                with open("files/ac_power.txt", "w") as f:
+                    f.write("0")
+                self.state["temperature"] = self.const_temp
+                
+                
             if self.gateway_ip:
                 # Cria mensagem de dados do sensor
                 sensor_data = device_pb2.SensorData()
@@ -85,6 +105,7 @@ class TemperatureSensor:
                     print(f"Error sending sensor data: {e}")
             
             time.sleep(self.state["update_interval"])
+
             
     def handle_command(self, command_msg):
         """Processa comandos recebidos (via TCP)"""
@@ -97,20 +118,20 @@ class TemperatureSensor:
             if command == "GET_STATUS":
                 response.success = True
                 response.message = "Status retrieved"
-                response.status = json.dumps(self.state)
+                # response.status = json.dumps(self.state)
                 response.attributes["temperature"] = str(self.state["temperature"])
                 response.attributes["unit"] = self.state["unit"]
 
             elif command == "SET_INTERVAL":
                 if "interval" in params:
                     interval = int(params["interval"])
-                    if 5 <= interval <= 3600:
+                    if 1 <= interval <= 3600:
                         self.state["update_interval"] = interval
                         response.success = True
                         response.message = f"Update interval set to {interval} seconds"
                     else:
                         response.success = False
-                        response.message = "Interval must be between 5 and 3600 seconds"
+                        response.message = "Interval must be between 1 and 3600 seconds"
                 else:
                     response.success = False
                     response.message = "Missing interval parameter"
@@ -118,6 +139,8 @@ class TemperatureSensor:
             else:
                 response.success = False
                 response.message = "Unknown command"
+
+            response.status = json.dumps(self.state)
             
             return response
 
@@ -166,7 +189,9 @@ class TemperatureSensor:
         """Escuta por mensagens de descoberta (multicast) e responde ao Gateway"""
         while True:
             data, addr = self.mcast_socket.recvfrom(1024)
-            if data.decode('utf-8') == "GATEWAY_DISCOVERY":
+            msg = device_pb2.DeviceCommand()
+            msg.ParseFromString(data)
+            if msg.command == "GATEWAY_DISCOVERY":
                 self.gateway_ip = addr[0]  # Salva IP do gateway para envio de dados
                 
                 # Prepara resposta
