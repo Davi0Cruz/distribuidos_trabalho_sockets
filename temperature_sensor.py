@@ -4,7 +4,6 @@ import struct
 import threading
 import time
 import json
-import random
 from datetime import datetime
 import device_pb2
 import subprocess
@@ -18,16 +17,16 @@ class TemperatureSensor:
         self.TCP_PORT = 0  # Será definido dinamicamente
         self.device_type = "temperature_sensor"
         
-        # Estado do dispositivo
+        # Estado do dispositivo (aqui consideramos "25°C" como ambiente inicial)
         self.state = {
-            "temperature": 25,
+            "temperature": 25.0,
             "unit": "°C",
-            "update_interval": 1  # segundos
+            "update_interval": 2  # segundos (ex.: a cada 2s)
         }
 
-        # Temperatura padrão
-        self.const_temp = 25
-        
+        # Temperatura que consideramos "externa/neutra"
+        self.default_temp = 25.0
+
         # Inicializar sockets
         self.init_tcp_server()
         self.init_multicast_listener()
@@ -63,33 +62,133 @@ class TemperatureSensor:
         finally:
             s.close()
         return ip
-        
-    def simulate_temperature(self):
-        """Lida com as mudanças de temperatura e envia dados periodicamente ao Gateway"""
-        while True:
-            # Simula variação de temperatura entre 20 e 30 graus
-            # variation = random.uniform(-0.5, 0.5)
-            # new_temp = self.state["temperature"] + variation
-            # self.state["temperature"] = max(20.0, min(30.0, new_temp))
+    
+    def simulate_environment_temperature(self):
+        """
+        Ajusta a temperatura do ambiente de forma 'aproximada',
+        considerando o estado do ar-condicionado e da lâmpada.
+        """
+        try:
+            # -----------------------------
+            # Ler arquivos do AC
+            # -----------------------------
+            with open("files/ac_power.txt", "r") as f:
+                ac_power_val = int(f.read().strip())  # se > 0 -> ON, se ==0 -> OFF
 
-            # Testando se o ar condicionado está conectado
-            pid_ac = subprocess.check_output("ps -aux | grep air_conditioner.py", shell=True, text=True)
-            if len(pid_ac.split("\n")) > 3:
-                # Conexão com temperatura do ar condicionado
-                with open("files/temperature.txt", "r") as f:
-                    conteudo = f.read().split()
-                    temp = int(conteudo[0])
-                    self.state["temperature"] = temp
-            else:
-                with open("files/temperature.txt", "w") as f:
-                    f.write(str(self.const_temp))
-                with open("files/ac_power.txt", "w") as f:
-                    f.write("0")
-                self.state["temperature"] = self.const_temp
-                
-                
+            with open("files/ac_settemp.txt", "r") as f:
+                ac_set_temp = float(f.read().strip())  # 16..30
+
+            with open("files/ac_mode.txt", "r") as f:
+                ac_mode = f.read().strip()  # COOL, HEAT, FAN
+
+            with open("files/ac_fanspeed.txt", "r") as f:
+                ac_fan_speed = f.read().strip()  # LOW, MEDIUM, HIGH, AUTO
+
+            # -----------------------------
+            # Ler arquivos da lâmpada
+            # -----------------------------
+            with open("files/lamp_power.txt", "r") as f:
+                lamp_power_val = int(f.read().strip())  # se > 0 -> ON
+
+            with open("files/brightness.txt", "r") as f:
+                lamp_brightness = int(f.read().strip())  # 0..100
+
+        except:
+            # Se der algum erro de leitura, assumimos valores padrão
+            ac_power_val = 0
+            ac_set_temp = 25.0
+            ac_mode = "COOL"
+            ac_fan_speed = "AUTO"
+            lamp_power_val = 0
+            lamp_brightness = 0
+
+        # A temperatura atual do ambiente
+        current_temp = self.state["temperature"]
+
+        # -----------------------------
+        # Cálculos de influência
+        # -----------------------------
+        # 1) efeito natural de "voltar" para a default_temp
+        #    se nada estiver ligado (ou dependendo do caso)
+        #    iremos "aproximar" do default_temp vagarosamente
+        #    Exemplo: delta ~ (default_temp - current_temp) * 0.01
+        #    => se current_temp < default_temp, sobe lentamente, e vice-versa
+        approach_rate = 0.02  # quão rápido volta à temp default
+        delta = (self.default_temp - current_temp) * approach_rate
+
+        # 2) efeito do ar-condicionado
+        #    - se ac_power_val > 0 => AC está ON
+        #      COOL -> tende a abaixar
+        #      HEAT -> tende a aumentar
+        #      FAN  -> efeito menor
+        #    - intensidade depende do fan_speed
+        fan_factor = {
+            "LOW": 0.5,
+            "MEDIUM": 1.0,
+            "HIGH": 1.5,
+            "AUTO": 1.0
+        }.get(ac_fan_speed, 1.0)
+
+        ac_effect = 0.0
+        if ac_power_val > 0:
+            if ac_mode == "COOL":
+                # Podemos diminuir a temp para se aproximar de ac_set_temp
+                # Exemplo de variação inversamente proporcional à diferença
+                # ou um valor fixo. Aqui, uso algo simples:
+                if current_temp > ac_set_temp:
+                    # resfriar
+                    ac_effect = -0.2 * fan_factor  # resfriamento base
+                else:
+                    # se já está abaixo do set_temp, não esfria mais
+                    ac_effect = 0.0
+
+            elif ac_mode == "HEAT":
+                if current_temp < ac_set_temp:
+                    # aquecer
+                    ac_effect = +0.2 * fan_factor
+                else:
+                    ac_effect = 0.0
+
+            elif ac_mode == "FAN":
+                # Modo FAN não muda muito a temp
+                # mas se a temp estiver abaixo do default, poderia subir um pouco
+                # ou se estiver acima, poderia descer um pouco.
+                # Aqui faremos um pequeno "empurrão" para se aproximar do default_temp
+                ac_effect = 0.05 * fan_factor * (self.default_temp - current_temp)
+
+        # 3) efeito da lâmpada
+        # se lamp_power_val > 0 => ON
+        # podemos adicionar um pequeno aquecimento proporcional ao brilho
+        lamp_effect = 0.0
+        if lamp_power_val > 0:
+            # Ex: a cada 100 de brilho => +0.5°C/s
+            lamp_effect = 0.05 * (lamp_brightness / 100.0)
+
+        # -----------------------------
+        # Soma tudo
+        # -----------------------------
+        new_temp = current_temp + delta + ac_effect + lamp_effect
+
+        # Podemos limitar para um range mínimo/máximo
+        if new_temp < 5:
+            new_temp = 5
+        if new_temp > 40:
+            new_temp = 40
+
+        # Atualiza no estado
+        self.state["temperature"] = new_temp
+
+        # Apenas para fácil conferência externa
+        with open("files/environment_temp.txt", "w") as f:
+            f.write(f"{new_temp:.2f}")
+
+    def simulate_temperature(self):
+        """Lida com a simulação de temperatura e envia dados periodicamente ao Gateway"""
+        while True:
+            self.simulate_environment_temperature()
+
+            # Agora, envia (via UDP) a temperatura para o Gateway
             if self.gateway_ip:
-                # Cria mensagem de dados do sensor
                 sensor_data = device_pb2.SensorData()
                 sensor_data.device_id = f"{self.device_type}_{self.get_local_ip()}_{self.TCP_PORT}"
                 sensor_data.sensor_type = "temperature"
@@ -97,7 +196,6 @@ class TemperatureSensor:
                 sensor_data.unit = self.state["unit"]
                 sensor_data.timestamp = int(time.time())
                 
-                # Envia para o gateway via UDP
                 try:
                     data = sensor_data.SerializeToString()
                     self.udp_socket.sendto(data, (self.gateway_ip, 50002))
@@ -118,7 +216,8 @@ class TemperatureSensor:
             if command == "GET_STATUS":
                 response.success = True
                 response.message = "Status retrieved"
-                # response.status = json.dumps(self.state)
+                # Retornamos status em JSON
+                response.status = json.dumps(self.state)
                 response.attributes["temperature"] = str(self.state["temperature"])
                 response.attributes["unit"] = self.state["unit"]
 
@@ -140,12 +239,12 @@ class TemperatureSensor:
                 response.success = False
                 response.message = "Unknown command"
 
-            response.status = json.dumps(self.state)
+            if not response.status:
+                response.status = json.dumps(self.state)
             
             return response
 
         except Exception as e:
-            # Em caso de erro ao processar o comando
             response = device_pb2.DeviceResponse()
             response.success = False
             response.message = f"Error: {str(e)}"
@@ -156,26 +255,20 @@ class TemperatureSensor:
         """Gerencia conexões TCP"""
         try:
             while True:
-                # Recebe tamanho da mensagem
                 size_data = client_socket.recv(4)
                 if not size_data:
                     break
                     
                 msg_size = int.from_bytes(size_data, byteorder='big')
-                
-                # Recebe mensagem do dispositivo
                 data = client_socket.recv(msg_size)
                 if not data:
                     break
                     
-                # Processa comando
                 command_msg = device_pb2.DeviceCommand()
                 command_msg.ParseFromString(data)
                 
-                # Gera resposta
                 response = self.handle_command(command_msg)
                 
-                # Envia resposta de volta
                 response_data = response.SerializeToString()
                 client_socket.send(len(response_data).to_bytes(4, byteorder='big'))
                 client_socket.send(response_data)
@@ -192,35 +285,29 @@ class TemperatureSensor:
             msg = device_pb2.DeviceCommand()
             msg.ParseFromString(data)
             if msg.command == "GATEWAY_DISCOVERY":
-                self.gateway_ip = addr[0]  # Salva IP do gateway para envio de dados
+                self.gateway_ip = addr[0]  # Salva IP do gateway
                 
-                # Prepara resposta
                 discovery_msg = device_pb2.DeviceDiscovery()
                 discovery_msg.device_type = self.device_type
                 discovery_msg.ip = self.get_local_ip()
                 discovery_msg.port = self.TCP_PORT
                 discovery_msg.status = json.dumps(self.state)
                 
-                # Envia resposta unicast
                 response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 response_socket.sendto(discovery_msg.SerializeToString(), (addr[0], 50001))
                 response_socket.close()
                 
     def run(self):
-        """Inicia o dispositivo (sensor)"""
-        # Thread para descoberta
         discovery_thread = threading.Thread(target=self.listen_for_discovery)
         discovery_thread.daemon = True
         discovery_thread.start()
         
-        # Thread para simulação de temperatura
         sensor_thread = threading.Thread(target=self.simulate_temperature)
         sensor_thread.daemon = True
         sensor_thread.start()
         
         print(f"Temperature Sensor running on port {self.TCP_PORT}")
         
-        # Aceita conexões TCP
         while True:
             client_sock, addr = self.tcp_socket.accept()
             client_thread = threading.Thread(target=self.handle_tcp_client, args=(client_sock, addr))
