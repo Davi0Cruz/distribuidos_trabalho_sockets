@@ -99,14 +99,14 @@ class DeviceConfigPopup(tb.Toplevel):
     """
     def __init__(self, parent, client, device_id, device_type):
         super().__init__(parent)
-        self.main_app = parent  # para podermos escrever no log principal
+        self.main_app = parent  # para escrever no log principal
         self.title(f"Configurações - {device_id}")
         self.client = client
         self.device_id = device_id
         self.device_type = device_type
 
-        self.geometry("500x320")
-        self.minsize(500, 320)
+        self.geometry("500x420")  # aumentei um pouco para comportar novos campos
+        self.minsize(500, 420)
 
         # Label informativa
         lbl_info = tb.Label(
@@ -124,7 +124,9 @@ class DeviceConfigPopup(tb.Toplevel):
         btn_status = tb.Button(frm_cmd, text="Get Status", command=self.on_get_status, bootstyle=PRIMARY)
         btn_status.pack(side=LEFT, padx=5)
 
-        # Alguns comandos comuns, se for lâmpada
+        # ----------------------------------------
+        # Se for Lâmpada
+        # ----------------------------------------
         if device_type == "smart_lamp":
             btn_on = tb.Button(frm_cmd, text="Ligar", command=lambda: self.send_cmd("ON"), bootstyle=SUCCESS)
             btn_on.pack(side=LEFT, padx=5)
@@ -148,7 +150,9 @@ class DeviceConfigPopup(tb.Toplevel):
             self.brightness_scale.set(50)  # valor inicial
             self.brightness_scale.pack(side=LEFT)
 
-        # Se for ar-condicionado
+        # ----------------------------------------
+        # Se for Ar-Condicionado
+        # ----------------------------------------
         elif device_type == "air_conditioner":
             btn_on = tb.Button(frm_cmd, text="Ligar", command=lambda: self.send_cmd("ON"), bootstyle=SUCCESS)
             btn_on.pack(side=LEFT, padx=5)
@@ -164,6 +168,32 @@ class DeviceConfigPopup(tb.Toplevel):
             self.temp_entry.pack(side=LEFT, padx=5)
             btn_temp = tb.Button(temp_frame, text="Set Temp", command=self.on_set_temperature, bootstyle=INFO)
             btn_temp.pack(side=LEFT)
+
+            # Seletor de Mode
+            mode_frame = tb.Frame(self)
+            mode_frame.pack(pady=5)
+            tb.Label(mode_frame, text="Mode:").pack(side=LEFT, padx=5)
+
+            self.mode_var = tk.StringVar(value="COOL")
+            self.mode_combo = ttk.Combobox(mode_frame, textvariable=self.mode_var, state="readonly")
+            self.mode_combo['values'] = ("COOL", "HEAT", "FAN")
+            self.mode_combo.pack(side=LEFT, padx=5)
+
+            btn_mode = tb.Button(mode_frame, text="Set Mode", command=self.on_set_mode, bootstyle=INFO)
+            btn_mode.pack(side=LEFT, padx=5)
+
+            # Seletor de Fan Speed
+            fan_frame = tb.Frame(self)
+            fan_frame.pack(pady=5)
+            tb.Label(fan_frame, text="Fan Speed:").pack(side=LEFT, padx=5)
+
+            self.fan_var = tk.StringVar(value="AUTO")
+            self.fan_combo = ttk.Combobox(fan_frame, textvariable=self.fan_var, state="readonly")
+            self.fan_combo['values'] = ("LOW", "MEDIUM", "HIGH", "AUTO")
+            self.fan_combo.pack(side=LEFT, padx=5)
+
+            btn_fan = tb.Button(fan_frame, text="Set Fan", command=self.on_set_fan_speed, bootstyle=INFO)
+            btn_fan.pack(side=LEFT, padx=5)
 
         # Caixa de texto para exibir o status
         lbl_st = tb.Label(self, text="Status do Dispositivo:")
@@ -189,7 +219,6 @@ class DeviceConfigPopup(tb.Toplevel):
         if not resp:
             self.write_result("[ERRO] Sem resposta do Gateway.")
             return
-        # Se deu certo, resp.success e resp.status deve conter info
         if resp.success:
             self.write_result(f"[GET_STATUS] {resp.message}")
             # Se o próprio dispositivo retorna status em JSON, exiba:
@@ -203,7 +232,6 @@ class DeviceConfigPopup(tb.Toplevel):
         try:
             state = json.loads(status_json_str)
             self.write_result(">>> Estado atual (JSON):")
-            # Exemplo: exibir cada chave/valor
             for k, v in state.items():
                 self.write_result(f"   {k}: {v}")
         except:
@@ -230,10 +258,8 @@ class DeviceConfigPopup(tb.Toplevel):
             self._show_state(resp.status)
 
     def on_brightness_change(self, value):
-        """Quando o usuário mexe no Scale de brilho"""
+        """Quando o usuário mexe no Scale de brilho (Lâmpada)"""
         brightness = int(float(value))
-        # Para não gerar spam, poderia só enviar quando soltar o mouse,
-        # mas aqui enviamos imediatamente:
         self.send_cmd("SET_BRIGHTNESS", {"brightness": brightness})
 
     def on_set_temperature(self):
@@ -247,6 +273,16 @@ class DeviceConfigPopup(tb.Toplevel):
             self.write_result("[ERRO] Temperatura deve ser entre 16 e 30.")
             return
         self.send_cmd("SET_TEMPERATURE", {"temperature": temp})
+
+    def on_set_mode(self):
+        """Define o modo (COOL, HEAT, FAN) do ar-condicionado"""
+        mode = self.mode_var.get().upper()
+        self.send_cmd("SET_MODE", {"mode": mode})
+
+    def on_set_fan_speed(self):
+        """Define a velocidade do ventilador (LOW, MEDIUM, HIGH, AUTO)"""
+        speed = self.fan_var.get().upper()
+        self.send_cmd("SET_FAN_SPEED", {"fan_speed": speed})
 
     # -------------------------------------
     # Exibir resultados no pop-up
@@ -266,6 +302,7 @@ class DeviceStatusPanel(tb.Frame):
       - air_conditioner: power, temperature, mode, fan_speed
       - temperature_sensor: temperature
       - smart_lamp: power, brightness
+      - etc.
     """
     def __init__(self, parent):
         super().__init__(parent, padding=10)
@@ -282,10 +319,7 @@ class DeviceStatusPanel(tb.Frame):
         """
         Recebe a lista de devices (ClientResponse.devices),
         e atualiza o painel. 
-        'devices' é a repeated list de DeviceInfo do protobuf.
         """
-        # Vamos criar/atualizar um "card" para cada device
-        # mapeado por device_id
         current_device_ids = [dev.device_id for dev in devices]
 
         # Remove cards antigos que não estão mais na lista
@@ -294,7 +328,7 @@ class DeviceStatusPanel(tb.Frame):
                 lbl = self.device_labels.pop(dev_id)
                 lbl.destroy()
 
-        # Para cada device, gera/atualiza as infos
+        # Atualiza/cria "cards" para cada device
         for dev in devices:
             dev_id = dev.device_id
             dev_type = dev.device_type
@@ -323,32 +357,29 @@ class DeviceStatusPanel(tb.Frame):
                 info_str = f"Smart Lamp [{dev_id}]\n  Power: {power}\n  Brightness: {brightness}"
 
             elif dev_type == "brightness_sensor":
-                sensor_temp = state.get("brightness", "?")
+                sensor_bri = state.get("brightness", "?")
                 unit = state.get("unit", "%")
-                info_str = f"Brightness Sensor [{dev_id}]\n  Brightness: {round(sensor_temp, 2)} {unit}"
+                info_str = f"Brightness Sensor [{dev_id}]\n  Brightness: {round(sensor_bri, 2)} {unit}"
 
             elif dev_type == "power_sensor":
-                sensor_temp = state.get("power", "?")
+                sensor_pow = state.get("power", "?")
                 unit = state.get("unit", "W")
-                info_str = f"Power Sensor [{dev_id}]\n  Power: {round(sensor_temp, 2)} {unit}"
+                info_str = f"Power Sensor [{dev_id}]\n  Power: {round(sensor_pow, 2)} {unit}"
 
             else:
                 # genérico
                 info_str = f"{dev_type} [{dev_id}]\n  status: {dev.status}"
 
             if dev_id not in self.device_labels:
-                # Cria um label "card" para exibir
                 lbl_card = tb.LabelFrame(self.devices_frame, text=dev_type, padding=5, bootstyle="info")
                 lbl_card.pack(side=TOP, fill=X, pady=5, padx=5)
 
                 lbl_info = tb.Label(lbl_card, text=info_str, justify=LEFT)
                 lbl_info.pack(side=LEFT, anchor="w")
 
-                # Armazena a referência
                 self.device_labels[dev_id] = lbl_card
                 self.device_labels[dev_id].lbl_info = lbl_info
             else:
-                # Atualiza texto
                 lbl_card = self.device_labels[dev_id]
                 lbl_info = lbl_card.lbl_info
                 lbl_info.config(text=info_str)
@@ -359,7 +390,6 @@ class DeviceStatusPanel(tb.Frame):
 # ===============================================
 class SmartHomeGUI(tb.Window):
     def __init__(self):
-        # Tema escuro (ex.: 'darkly', 'cyborg', 'vapor', etc.)
         super().__init__(themename="darkly")
         self.title("Smart Home - Interface Gráfica com Status em Tempo Real")
         self.geometry("1200x800")
@@ -380,7 +410,7 @@ class SmartHomeGUI(tb.Window):
         self.create_middle_frame()
         self.create_bottom_frame()
 
-        # Painel de estado dos devices (atualizado periodicamente)
+        # Painel de estado
         self.status_panel = DeviceStatusPanel(self.middle_frame_right)
         self.status_panel.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
 
@@ -395,33 +425,27 @@ class SmartHomeGUI(tb.Window):
         self.top_frame = tb.Frame(self)
         self.top_frame.pack(side=TOP, fill=X, padx=5, pady=5)
 
-        # Frame de Conexão
         frm_conn = tb.Labelframe(self.top_frame, text="Conexão com Gateway", bootstyle="primary")
         frm_conn.pack(side=LEFT, fill=BOTH, expand=True, padx=5, pady=5)
 
-        # IP
         lbl_ip = tb.Label(frm_conn, text="Gateway IP:")
         lbl_ip.grid(row=0, column=0, padx=5, pady=5)
         self.ip_entry = tb.Entry(frm_conn, width=15)
         self.ip_entry.insert(0, "127.0.0.1")
         self.ip_entry.grid(row=0, column=1, padx=5, pady=5)
 
-        # Porta
         lbl_port = tb.Label(frm_conn, text="Porta:")
         lbl_port.grid(row=0, column=2, padx=5, pady=5)
         self.port_entry = tb.Entry(frm_conn, width=6)
         self.port_entry.insert(0, "6000")
         self.port_entry.grid(row=0, column=3, padx=5, pady=5)
 
-        # Botão Conectar
         btn_connect = tb.Button(frm_conn, text="Conectar", command=self.on_connect, bootstyle=SUCCESS)
         btn_connect.grid(row=0, column=4, padx=10, pady=5)
 
-        # Botão Desconectar
         btn_disconnect = tb.Button(frm_conn, text="Desconectar", command=self.on_disconnect, bootstyle=DANGER)
         btn_disconnect.grid(row=0, column=5, padx=10, pady=5)
 
-        # Indicador de conexão
         self.conn_indicator = tb.Label(frm_conn, text="●", font="-size 14", foreground="red")
         self.conn_indicator.grid(row=0, column=6, padx=10)
 
@@ -429,17 +453,15 @@ class SmartHomeGUI(tb.Window):
         self.conn_status_label.grid(row=0, column=7, padx=5)
 
     # =============================================
-    #   MEIO: Dividimos em duas partes (LEFT e RIGHT)
+    #   MEIO (Dividido em 2: LEFT e RIGHT)
     # =============================================
     def create_middle_frame(self):
         self.middle_frame = tb.Frame(self)
         self.middle_frame.pack(side=TOP, fill=BOTH, expand=True, padx=5, pady=5)
 
-        # Metade esquerda: Treeview + Botões
         self.middle_frame_left = tb.Frame(self.middle_frame)
         self.middle_frame_left.pack(side=LEFT, fill=BOTH, expand=True)
 
-        # Metade direita: Painel de status em tempo real
         self.middle_frame_right = tb.Frame(self.middle_frame)
         self.middle_frame_right.pack(side=RIGHT, fill=BOTH, expand=True)
 
@@ -489,7 +511,6 @@ class SmartHomeGUI(tb.Window):
         frm_log = tb.Labelframe(self.bottom_frame, text="Logs (Filtráveis)", bootstyle="secondary")
         frm_log.pack(side=TOP, fill=BOTH, expand=True)
 
-        # Frame de filtros
         frm_filter = tb.Frame(frm_log)
         frm_filter.pack(side=TOP, fill=X)
 
@@ -501,11 +522,9 @@ class SmartHomeGUI(tb.Window):
             btn.grid(row=0, column=i, padx=5)
             self.filter_buttons[cat] = var
 
-        # Caixa de texto para logs
         self.log_text = tb.Text(frm_log, wrap="word")
         self.log_text.pack(side=LEFT, fill=BOTH, expand=True, padx=5, pady=5)
 
-        # Barra de rolagem
         scroll = tb.Scrollbar(frm_log, command=self.log_text.yview)
         scroll.pack(side=LEFT, fill=Y)
         self.log_text.configure(yscrollcommand=scroll.set)
@@ -517,8 +536,6 @@ class SmartHomeGUI(tb.Window):
         selected_item = self.device_tree.focus()
         if not selected_item:
             return
-        values = self.device_tree.item(selected_item, "values")
-        # Ex: (device_id, device_type, status, ip_port)
 
     def on_device_config(self):
         selected_item = self.device_tree.focus()
@@ -544,7 +561,6 @@ class SmartHomeGUI(tb.Window):
         popup.grab_set()
 
     def on_list_devices(self):
-        """Consulta a lista de devices e atualiza a Treeview e o Painel de Status."""
         if not self.client.is_connected():
             self.write_log("Não está conectado ao Gateway.", "[ERRO]")
             return
@@ -564,19 +580,16 @@ class SmartHomeGUI(tb.Window):
 
         self.write_log("Lista de dispositivos atualizada.", "[INFO]")
 
-        # Limpar a Treeview
         for item in self.device_tree.get_children():
             self.device_tree.delete(item)
 
-        # Preencher Treeview
         for dev in response.devices:
             dev_id = dev.device_id
             dev_type = dev.device_type
             ip_port = f"{dev.ip}:{dev.port}"
-            dev_status = dev.status  # pode ser JSON ou algo
+            dev_status = dev.status
             self.device_tree.insert("", tk.END, values=(dev_id, dev_type, dev_status, ip_port))
 
-        # Atualiza o Painel de Status também
         self.status_panel.update_status(response.devices)
 
     # =============================================
@@ -604,10 +617,9 @@ class SmartHomeGUI(tb.Window):
         if self.client.is_connected():
             self.client.disconnect()
             self.conn_indicator.config(foreground="red")
-            limpar_status = {}
-            self.status_panel.update_status(limpar_status)
             for item in self.device_tree.get_children():
                 self.device_tree.delete(item)
+            self.status_panel.update_status([])
             self.conn_status_label.config(text="[Desconectado]", foreground="red")
             self.write_log("Desconectado do Gateway.", "[INFO]")
         else:
@@ -625,7 +637,6 @@ class SmartHomeGUI(tb.Window):
         self.log_text.see(tk.END)
 
     def on_filter_change(self):
-        """Atualiza self.log_filters de acordo com checkbuttons."""
         for cat, var in self.filter_buttons.items():
             self.log_filters[cat] = var.get()
 
@@ -633,22 +644,14 @@ class SmartHomeGUI(tb.Window):
     #   ATUALIZAÇÃO PERIÓDICA
     # =============================================
     def start_periodic_update(self):
-        """Inicia ciclo de atualização periódica do painel de status."""
         self.after(self.update_interval_ms, self.periodic_update)
 
     def periodic_update(self):
-        """Chamada a cada X ms para atualizar dispositivos."""
         if self.client.is_connected():
-            # Chama on_list_devices() mas sem poluir logs
             response, error = self.client.list_devices()
             if response and response.success:
-                # Atualiza a Treeview de forma silenciosa
-                # (ou, se preferir, faça um "refresh" total)
-                # Vou apenas atualizar o painel de status sem mexer na tree 
-                # para não poluir. Mas você pode fazer o full update:
                 self.status_panel.update_status(response.devices)
 
-        # Reagendar
         self.after(self.update_interval_ms, self.periodic_update)
 
 
