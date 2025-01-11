@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import socket
-import struct
 import threading
 import time
 import json
-from datetime import datetime
 import device_pb2
 
 class Gateway:
@@ -34,7 +32,7 @@ class Gateway:
         self.sensor_socket.bind(('0.0.0.0', 50002))
 
     def send_discovery_message(self):
-        self.devices.clear() # MUDEI AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        self.devices.clear()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
         discovery_msg = device_pb2.DeviceCommand()

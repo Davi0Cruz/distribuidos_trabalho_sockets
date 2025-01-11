@@ -4,8 +4,6 @@ import struct
 import threading
 import time
 import json
-import random
-from datetime import datetime
 import device_pb2
 import subprocess
 

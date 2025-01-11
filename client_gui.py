@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import socket
 import json
-from datetime import datetime
 
 import device_pb2
 
@@ -26,9 +25,8 @@ class SmartHomeClient:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.gateway_ip, self.gateway_port))
             return True, "Conexão estabelecida com sucesso!"
-        except Exception: # as e:
+        except Exception:
             return False, f"Gateway offline."
-            #return False, f"Erro ao conectar: {e}"
             
     def disconnect(self):
         """Desconecta do gateway"""
@@ -62,7 +60,7 @@ class SmartHomeClient:
             response.ParseFromString(response_data)
             return response, None
             
-        except Exception: # as e:
+        except Exception:
             return None, f"Desconectado do Gateway."
             
     def list_devices(self):

@@ -4,7 +4,6 @@ import struct
 import threading
 import time
 import json
-from datetime import datetime
 import device_pb2
 
 class SmartLamp:

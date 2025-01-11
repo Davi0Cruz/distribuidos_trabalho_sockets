@@ -4,7 +4,6 @@ import struct
 import threading
 import time
 import json
-from datetime import datetime
 import device_pb2
 import subprocess
 
@@ -98,25 +97,6 @@ class TemperatureSensor:
             ac_set_temp = 25.0
             ac_mode = "COOL"
             ac_fan_speed = "AUTO"
-
-        # -----------------------------
-        # Ler arquivos da lâmpada
-        # -----------------------------
-        # pid_lamp = subprocess.check_output("ps -aux | grep smart_lamp.py", shell=True, text=True)
-        # if len(pid_lamp.split("\n")) > 3:
-        #     try:     
-        #         with open("files/lamp_power.txt", "r") as f:
-        #             lamp_power_val = int(f.read().strip())  # se > 0 -> ON
-
-        #         with open("files/brightness.txt", "r") as f:
-        #             lamp_brightness = int(f.read().strip())  # 0..100
-        #     except:
-        #         lamp_power_val = 0
-        #         lamp_brightness = 0
-        # else:
-        #     # Se a lâmpada não estiver funcionando, assumimos valores padrão
-        #     lamp_power_val = 0
-        #     lamp_brightness = 0
       
         # A temperatura atual do ambiente
         current_temp = self.state["temperature"]
@@ -172,20 +152,10 @@ class TemperatureSensor:
                 # Aqui faremos um pequeno "empurrão" para se aproximar do default_temp
                 ac_effect = 0.05 * fan_factor * (self.default_temp - current_temp)
 
-        # 3) efeito da lâmpada
-        # se lamp_power_val > 0 => ON
-        # podemos adicionar um pequeno aquecimento proporcional ao brilho
-        # Ex: a cada 100 de brilho => +0.5°C/s
-        # lamp_effect = 0.05 * (lamp_brightness / 100.0)
-        # lamp_effect_test = self.state["temperature"] + lamp_effect
-        # if lamp_power_val == 0 or :
-        #     # se lamp_power_val == 0 => OFF
-        #     lamp_effect = 0.0
-
         # -----------------------------
         # Soma tudo
         # -----------------------------
-        new_temp = current_temp + delta + ac_effect # + lamp_effect
+        new_temp = current_temp + delta + ac_effect
 
         # Podemos limitar para um range mínimo/máximo
         if new_temp < 5:
