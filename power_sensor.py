@@ -22,7 +22,7 @@ class PowerSensor:
         self.state = {
             "power": 0,
             "unit": "W",
-            "update_interval": 1  # segundos
+            "update_interval": 2  # segundos
         }
         
         # Inicializar sockets

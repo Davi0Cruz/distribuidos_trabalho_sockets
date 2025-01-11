@@ -68,40 +68,56 @@ class TemperatureSensor:
         Ajusta a temperatura do ambiente de forma 'aproximada',
         considerando o estado do ar-condicionado e da lâmpada.
         """
-        try:
-            # -----------------------------
-            # Ler arquivos do AC
-            # -----------------------------
-            with open("files/ac_power.txt", "r") as f:
-                ac_power_val = int(f.read().strip())  # se > 0 -> ON, se ==0 -> OFF
 
-            with open("files/ac_settemp.txt", "r") as f:
-                ac_set_temp = float(f.read().strip())  # 16..30
+        # -----------------------------
+        # Ler arquivos do AC
+        # -----------------------------
+        pid_ac = subprocess.check_output("ps -aux | grep air_conditioner.py", shell=True, text=True)
+        if len(pid_ac.split("\n")) > 3:
+            try:
+                with open("files/ac_power.txt", "r") as f:
+                    ac_power_val = int(f.read().strip())  # se > 0 -> ON, se ==0 -> OFF
 
-            with open("files/ac_mode.txt", "r") as f:
-                ac_mode = f.read().strip()  # COOL, HEAT, FAN
+                with open("files/ac_settemp.txt", "r") as f:
+                    ac_set_temp = float(f.read().strip())  # 16..30
 
-            with open("files/ac_fanspeed.txt", "r") as f:
-                ac_fan_speed = f.read().strip()  # LOW, MEDIUM, HIGH, AUTO
+                with open("files/ac_mode.txt", "r") as f:
+                    ac_mode = f.read().strip()  # COOL, HEAT, FAN
 
-            # -----------------------------
-            # Ler arquivos da lâmpada
-            # -----------------------------
-            with open("files/lamp_power.txt", "r") as f:
-                lamp_power_val = int(f.read().strip())  # se > 0 -> ON
-
-            with open("files/brightness.txt", "r") as f:
-                lamp_brightness = int(f.read().strip())  # 0..100
-
-        except:
-            # Se der algum erro de leitura, assumimos valores padrão
+                with open("files/ac_fanspeed.txt", "r") as f:
+                    ac_fan_speed = f.read().strip()  # LOW, MEDIUM, HIGH, AUTO
+            except:
+                # Se der algum erro de leitura, assumimos valores padrão
+                ac_power_val = 0
+                ac_set_temp = 25.0
+                ac_mode = "COOL"
+                ac_fan_speed = "AUTO"
+        else:
+            # Se o ar condicionado não estiver funcionando, assumimos valores padrão
             ac_power_val = 0
             ac_set_temp = 25.0
             ac_mode = "COOL"
             ac_fan_speed = "AUTO"
-            lamp_power_val = 0
-            lamp_brightness = 0
 
+        # -----------------------------
+        # Ler arquivos da lâmpada
+        # -----------------------------
+        # pid_lamp = subprocess.check_output("ps -aux | grep smart_lamp.py", shell=True, text=True)
+        # if len(pid_lamp.split("\n")) > 3:
+        #     try:     
+        #         with open("files/lamp_power.txt", "r") as f:
+        #             lamp_power_val = int(f.read().strip())  # se > 0 -> ON
+
+        #         with open("files/brightness.txt", "r") as f:
+        #             lamp_brightness = int(f.read().strip())  # 0..100
+        #     except:
+        #         lamp_power_val = 0
+        #         lamp_brightness = 0
+        # else:
+        #     # Se a lâmpada não estiver funcionando, assumimos valores padrão
+        #     lamp_power_val = 0
+        #     lamp_brightness = 0
+      
         # A temperatura atual do ambiente
         current_temp = self.state["temperature"]
 
@@ -159,15 +175,17 @@ class TemperatureSensor:
         # 3) efeito da lâmpada
         # se lamp_power_val > 0 => ON
         # podemos adicionar um pequeno aquecimento proporcional ao brilho
-        lamp_effect = 0.0
-        if lamp_power_val > 0:
-            # Ex: a cada 100 de brilho => +0.5°C/s
-            lamp_effect = 0.05 * (lamp_brightness / 100.0)
+        # Ex: a cada 100 de brilho => +0.5°C/s
+        # lamp_effect = 0.05 * (lamp_brightness / 100.0)
+        # lamp_effect_test = self.state["temperature"] + lamp_effect
+        # if lamp_power_val == 0 or :
+        #     # se lamp_power_val == 0 => OFF
+        #     lamp_effect = 0.0
 
         # -----------------------------
         # Soma tudo
         # -----------------------------
-        new_temp = current_temp + delta + ac_effect + lamp_effect
+        new_temp = current_temp + delta + ac_effect # + lamp_effect
 
         # Podemos limitar para um range mínimo/máximo
         if new_temp < 5:

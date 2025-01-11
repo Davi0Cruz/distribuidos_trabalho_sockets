@@ -21,7 +21,7 @@ class BrightnessSensor:
         self.state = {
             "brightness": 0,
             "unit": "%",
-            "update_interval": 1  # segundos
+            "update_interval": 2  # segundos
         }
         
         # Inicializar sockets

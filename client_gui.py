@@ -26,8 +26,9 @@ class SmartHomeClient:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.gateway_ip, self.gateway_port))
             return True, "Conexão estabelecida com sucesso!"
-        except Exception as e:
-            return False, f"Erro ao conectar: {e}"
+        except Exception: # as e:
+            return False, f"Gateway offline."
+            #return False, f"Erro ao conectar: {e}"
             
     def disconnect(self):
         """Desconecta do gateway"""
@@ -41,7 +42,7 @@ class SmartHomeClient:
     def send_request(self, request):
         """Envia requisição para o gateway e obtém resposta"""
         if not self.sock:
-            return None, "Não há conexão com o Gateway."
+            return None, "Desconectado do Gateway."
 
         try:
             data = request.SerializeToString()
@@ -61,8 +62,8 @@ class SmartHomeClient:
             response.ParseFromString(response_data)
             return response, None
             
-        except Exception as e:
-            return None, f"Erro no envio/recebimento: {e}"
+        except Exception: # as e:
+            return None, f"Desconectado do Gateway."
             
     def list_devices(self):
         """Lista todos os dispositivos (retorna ClientResponse)"""
@@ -562,7 +563,12 @@ class SmartHomeGUI(tb.Window):
 
     def on_list_devices(self):
         if not self.client.is_connected():
-            self.write_log("Não está conectado ao Gateway.", "[ERRO]")
+            self.conn_indicator.config(foreground="red")
+            for item in self.device_tree.get_children():
+                self.device_tree.delete(item)
+            self.status_panel.update_status([])
+            self.conn_status_label.config(text="[Desconectado]", foreground="red")
+            self.write_log("Desconectado do Gateway.", "[ERRO]")
             return
 
         response, error = self.client.list_devices()
@@ -611,6 +617,12 @@ class SmartHomeGUI(tb.Window):
             self.conn_status_label.config(text="[Conectado]", foreground="green")
             self.write_log(msg, "[INFO]")
         else:
+            self.client.disconnect()
+            self.conn_indicator.config(foreground="red")
+            for item in self.device_tree.get_children():
+                self.device_tree.delete(item)
+            self.status_panel.update_status([])
+            self.conn_status_label.config(text="[Desconectado]", foreground="red")
             self.write_log(msg, "[ERRO]")
 
     def on_disconnect(self):
